@@ -24,32 +24,15 @@ MoT resolves this by introducing a small, pretrained model called an **aligner**
 ### The Three-Stage Pretraining Lifecycle
 MoT structures model construction into three distinct stages, allowing the model to be built piece by piece. 
 
-**Stage 0: Aligner Preparation**
-First, MoT selects or pretrains a shape-compatible aligner, then partitions both the aligner and the target architecture into $K$ contiguous layer blocks.
+![Mixture of Training (MoT) Architecture](/assets/images/mot_approach.png)
+*Figure 1: The complete architecture and workflow of Mixture of Training (MoT)[1].*
 
-![Step 1: Using Pretrained Model as Aligner](/assets/images/mot-step1.png)
-*Figure 1a: Slicing the pretrained aligner.*
+Based on the architecture detailed in Figure 1, the MoT process unfolds as follows:
 
-**Stage 1: Parallel Scaffold Training**
-To train a specific target block $f_i$, MoT constructs a dedicated scaffold network $S_i$:
-
-$$S_i = a_K \circ \dots \circ a_{i+1} \circ f_i \circ a_{i-1} \circ \dots \circ a_1$$
-
-Each target block is trained concurrently inside its own scaffold. 
-
-![Step 2: Configuring the Target Larger Model](/assets/images/mot-step2.png)
-*Figure 1b: Packaging the untrained target blocks.*
-
-During optimization, only the parameters in the target block $f_i$ are updated using standard next-token prediction loss, while all aligner slices remain frozen. 
-
-![Step 3: Replacing Aligner Components](/assets/images/mot-step3.png)
-*Figure 1c: Scaffolded training. Because every target block optimizes inside the representational context of the exact same frozen aligner, they implicitly conform to a shared representational contract without exchanging gradients.*
-
-**Stage 2: Recomposition & Adaptation**
-Finally, the system discards the aligner slices and assembles the newly trained target blocks into the complete target model $\hat{F} = f_K \circ \dots \circ f_1$. 
-
-![Step 4: Composing the Trained Submodels](/assets/images/mot-step4.png)
-*Figure 1d: The "cold-composed" model is assembled. Optionally, a brief end-to-end adaptation pass reconciles boundary transitions.*
+*   **Step 1: Using Pretrained Model as Aligner (Stage 0).** A shape-compatible pretrained aligner is selected and partitioned into contiguous layer blocks. Its parameters are strictly frozen.
+*   **Step 2: Configuring the Target Larger Model for Training (Stage 0).** The target architecture's randomly initialized layers are packaged into submodels (e.g., early layers, middle layers, last layers) corresponding to the aligner's partitions.
+*   **Step 3: Scaffolded Training (Stage 1).** The aligner components are temporarily replaced with their corresponding target submodels. Each resulting scaffold is trained independently. During this step, only the target blocks are updated using standard next-token prediction loss, while the surrounding aligner layers remain frozen. Because every block optimizes within the exact same frozen representational context, they implicitly conform to a shared interface contract without exchanging gradients.
+*   **Step 4: Composing the Trained Submodels (Stage 2).** The frozen aligner slices are discarded, and the newly trained target submodels are stitched together to form the final, larger target model. This "cold-composed" model can optionally undergo a brief end-to-end adaptation pass to reconcile any remaining boundary transitions.
 
 ## Advantages and Disadvantages
 
