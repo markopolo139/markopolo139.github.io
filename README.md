@@ -16,22 +16,27 @@ Large language model (LLM) pretraining has historically been an all-or-nothing, 
 
 The paper *Mixture of Training: Recombining Small-Scale Scaffolded Pretraining Runs into a Larger Language Model* introduces a divide-and-conquer alternative. The authors ask a fundamental question: can pretraining be decomposed into smaller, independently trainable depth slices that can later be recomposed into a fully functional language model?
 
-## The Problem with Monolithic Training
+## The Problem: Hidden-State Drift
 
 In standard pretraining, a target Transformer $F$ composed of $K$ contiguous layer blocks is trained as a unified chain:
 
 $$F = f_K \circ f_{K-1} \circ \dots \circ f_1$$
 
-Gradients must flow end-to-end through all $K$ blocks simultaneously. This creates a scaling bottleneck, as all layers are locked together during optimization. 
+Gradients flow end-to-end through all $K$ blocks simultaneously. This creates a scaling bottleneck because all layers are locked together during optimization. 
 
-## How Mixture of Training (MoT) Works
+Why can't we simply split the model, train the first half on GPU A, the second half on GPU B, and glue them together later? The answer is **hidden-state drift**. If block $f_1$ and block $f_2$ train without communicating, the mathematical activation space output by $f_1$ will not match the input format that $f_2$ has learned to expect. Stitching them together "cold" results in a catastrophic collapse in quality. 
 
-MoT decouples this pipeline by training each target block $f_i$ independently inside a frozen, pretrained **aligner scaffold**. 
+## The Solution: The Aligner as an "Interface Contract"
 
-### The Aligner Scaffold & Interface Contract
-The primary challenge in training depth slices independently is hidden-state drift: if block $f_1$ and block $f_2$ train without communicating, the activation space output by $f_1$ will not match what $f_2$ expects as input. 
+MoT resolves this mismatch by introducing a small, pretrained model called an **aligner** ($A = a_K \circ \dots \circ a_1$). The aligner is sliced into the exact same number of blocks ($K$) as the target model. 
 
-MoT resolves this by introducing a small, pretrained model called an **aligner** $A = a_K \circ \dots \circ a_1$, which is sliced into the same number of blocks $K$ as the target model. The aligner must be shape-compatible with the target model—sharing the global width, attention-head dimensions, feed-forward width, token embedding space, and output head. This allows layer blocks to be swapped cleanly without requiring additional projection layers.
+Crucially, the aligner acts as a universal translator or a standardized "API contract" for the neural network. It must be shape-compatible with the target model—sharing the exact same global width, attention-head dimensions, token embeddings, and output head. This shape compatibility allows layers to be swapped cleanly without requiring messy post-hoc projection layers.
+
+To train a specific target block (e.g., $f_i$), MoT builds a "scaffold" network around it using the aligner:
+
+$$S_i = a_K \circ \dots \circ a_{i+1} \circ f_i \circ a_{i-1} \circ \dots \circ a_1$$
+
+During training, only the target block $f_i$ is updated; the surrounding aligner layers are strictly frozen. Because every independent target block optimizes inside the exact same frozen aligner environment, they all learn to speak the same mathematical language. They conform to a shared representational contract without ever exchanging gradients with each other.
 
 ### The Three-Stage Pretraining Lifecycle
 MoT structures model construction into three distinct stages, allowing the model to be built piece by piece. 
@@ -53,7 +58,7 @@ By altering the engineering parameters of LLM pretraining, MoT introduces a new 
 **Advantages:**
 * **Parallel Critical Path:** Because Stage 1 submodel jobs execute independently without inter-job gradient communication, training time scales with available parallel hardware, shortening the idealized dependency path compared to monolithic runs.
 * **Modular Fault Tolerance:** Submodel runs are decoupled. A hardware crash or instability in one block's training job does not affect the others, simplifying recovery workflows.
-* **Amortized Efficiency:** While pretraining an aligner requires compute upfront, the effective cost falls below a monolithic baseline if the same aligner is reused across multiple independent target-model runs.
+* **Amortized Efficiency:** Pretraining the aligner introduces a one-time compute overhead. If a team only trains a single target model, MoT costs more total compute than a baseline run. However, if the exact same aligner is reused to scaffold three or more independent target models, the effective cost drops below a monolithic baseline.
 
 **Disadvantages:**
 * **Cold-Composition Mismatch:** Stitching submodels together directly introduces a performance mismatch at layer boundaries, requiring a Stage 2 adaptation pass to recover full baseline quality.
