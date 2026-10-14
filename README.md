@@ -1,19 +1,82 @@
-# TEST of the Website Quickstart for GitHub Pages
+# Building Models like Software: Scaffolded Pretraining with Mixture of Training (MoT)
 
-You can use GitHub Pages to showcase open source projects, host a blog, or even share your résumé. This guide will help get you started on creating your next website.
+Large language model (LLM) pretraining has historically been an all-or-nothing, monolithic endeavor. Every layer in a massive Transformer is optimized jointly in a single, tightly coupled run. If a node fails, a loss spike occurs, or an architectural change is desired, engineers are forced to either roll back to a checkpoint or restart the entire system. 
 
-## Introduction
+The paper *Mixture of Training: Recombining Small-Scale Scaffolded Pretraining Runs into a Larger Language Model* introduces a divide-and-conquer alternative. The authors ask a fundamental question: can pretraining be decomposed into smaller, independently trainable depth slices that can later be recomposed into a fully functional language model?
 
-In this guide, you'll create a user site at `<username>.github.io`.
+## The Problem with Monolithic Training
 
-## Creating your website
+In standard pretraining, a target Transformer $F$ composed of $K$ contiguous layer blocks is trained as a unified chain:
 
-1. In the upper-right corner of any page, select <svg version="1.1" width="16" height="16" viewBox="0 0 16 16" class="octicon octicon-plus" aria-label="Create something new" role="img"><path d="M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z"></path></svg>, then click **New repository**.
+$$F = f_K \circ f_{K-1} \circ \dots \circ f_1$$
 
-   ![Screenshot of a GitHub dropdown menu showing options to create new items. The menu item "New repository" is outlined in dark orange.](/assets/images/help/repository/repo-create-global-nav-update.png)
-2. Enter `username.github.io` as the repository name. Replace `username` with your GitHub username. For example, if your username is `octocat`, the repository name should be `octocat.github.io`.
-   ![Screenshot of GitHub Pages settings in a repository. The repository name field contains the text "octocat.github.io" and is outlined in dark orange.](/assets/images/help/pages/create-repository-name-pages.png)
-3. Choose a repository visibility. For more information, see [About repositories](/en/repositories/creating-and-managing-repositories/about-repositories#about-repository-visibility).
-4. Toggle **Add README** to **On**.
-5. Click **Create repository**.
-6. Under your repository name, click **<svg version="1.1" width="16" height="16" viewBox="0 0 16 16" class="octicon octicon-gear" aria-label="gear" role="img"><path d="M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.299.071l1.103-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294.016.257.016.515 0 .772-.01.147.038.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.977 7.977 0 0 1-.704 1.217c-.428.61-1.176.807-1.82.63l-1.102-.302c-.067-.019-.177-.011-.3.071a5.909 5.909 0 0 1-.668.386c-.133.066-.194.158-.211.224l-.29 1.106c-.168.646-.715 1.196-1.458 1.26a8.006 8.006 0 0 1-1.402 0c-.743-.064-1.289-.614-1.458-1.26l-.289-1.106c-.018-.066-.079-.158-.212-.224a5.738 5.738 0 0 1-.668-.386c-.123-.082-.233-.09-.299-.071l-1.103.303c-.644.176-1.392-.021-1.82-.63a8.12 8.12 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.05-.048.098-.147.088-.294a6.214 6.214 0 0 1 0-.772c.01-.147-.038-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.92 7.92 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.102.302c.067.019.177.011.3-.071.214-.143.437-.272.668-.386.133-.066.194-.158.211-.224l.29-1.106C6.009.645 6.556.095 7.299.03 7.53.01 7.764 0 8 0Zm-.571 1.525c-.036.003-.108.036-.137.146l-.289 1.105c-.147.561-.549.967-.998 1.189-.173.086-.34.183-.5.29-.417.278-.97.423-1.529.27l-1.103-.303c-.109-.03-.175.016-.195.045-.22.312-.412.644-.573.99-.014.031-.021.11.059.19l.815.806c.411.406.562.957.53 1.456a4.709 4.709 0 0 0 0 .582c.032.499-.119 1.05-.53 1.456l-.815.806c-.081.08-.073.159-.059.19.162.346.353.677.573.989.02.03.085.076.195.046l1.102-.303c.56-.153 1.113-.008 1.53.27.161.107.328.204.501.29.447.222.85.629.997 1.189l.289 1.105c.029.109.101.143.137.146a6.6 6.6 0 0 0 1.142 0c.036-.003.108-.036.137-.146l.289-1.105c.147-.561.549-.967.998-1.189.173-.086.34-.183.5-.29.417-.278.97-.423 1.529-.27l1.103.303c.109.029.175-.016.195-.045.22-.313.411-.644.573-.99.014-.031.021-.11-.059-.19l-.815-.806c-.411-.406-.562-.957-.53-1.456a4.709 4.709 0 0 0 0-.582c-.032-.499.119-1.05.53-1.456l.815-.806c.081-.08.073-.159.059-.19a6.464 6.464 0 0 0-.573-.989c-.02-.03-.085-.076-.195-.046l-1.102.303c-.56.153-1.113.008-1.53-.27a4.44 4.44 0 0 0-.501-.29c-.447-.222-.85-.629-.997-1.189l-.289-1.105c-.029-.11-.101-.143-.137-.146a6.6 6.6 0 0 0-1.142 0ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM9.5 8a1.5 1.5 0 1 0-3.001.001A1.5 1.5 0 0 0 9.5 8Z"></path></svg> Settings**. If you cannot see the "Settings" tab, select the **<svg version="1.1" width="16" height="16" viewBox="0 0 16 16" class="octicon octicon-kebab-horizontal" aria-label="More" role="img"><path d="M8 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM1.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm13 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"></path></svg>** dropdown menu, then click **Settings**.
+Gradients must flow end-to-end through all $K$ blocks simultaneously. This creates a scaling bottleneck, as all layers are locked together during optimization. 
+
+## How Mixture of Training (MoT) Works
+
+MoT decouples this pipeline by training each target block $f_i$ independently inside a frozen, pretrained **aligner scaffold**. 
+
+### The Aligner Scaffold & Interface Contract
+The primary challenge in training depth slices independently is hidden-state drift: if block $f_1$ and block $f_2$ train without communicating, the activation space output by $f_1$ will not match what $f_2$ expects as input. 
+
+MoT resolves this by introducing a small, pretrained model called an **aligner** $A = a_K \circ \dots \circ a_1$, which is sliced into the same number of blocks $K$ as the target model. The aligner must be shape-compatible with the target model—sharing the global width, attention-head dimensions, feed-forward width, token embedding space, and output head. This allows layer blocks to be swapped cleanly without requiring additional projection layers.
+
+### The Three-Stage Pretraining Lifecycle
+MoT structures model construction into three distinct stages, allowing the model to be built piece by piece. 
+
+**Stage 0: Aligner Preparation**
+First, MoT selects or pretrains a shape-compatible aligner, then partitions both the aligner and the target architecture into $K$ contiguous layer blocks.
+
+![Step 1: Using Pretrained Model as Aligner](/assets/images/mot-step1.png)
+*Figure 1a: Slicing the pretrained aligner.*
+
+**Stage 1: Parallel Scaffold Training**
+To train a specific target block $f_i$, MoT constructs a dedicated scaffold network $S_i$:
+
+$$S_i = a_K \circ \dots \circ a_{i+1} \circ f_i \circ a_{i-1} \circ \dots \circ a_1$$
+
+Each target block is trained concurrently inside its own scaffold. 
+
+![Step 2: Configuring the Target Larger Model](/assets/images/mot-step2.png)
+*Figure 1b: Packaging the untrained target blocks.*
+
+During optimization, only the parameters in the target block $f_i$ are updated using standard next-token prediction loss, while all aligner slices remain frozen. 
+
+![Step 3: Replacing Aligner Components](/assets/images/mot-step3.png)
+*Figure 1c: Scaffolded training. Because every target block optimizes inside the representational context of the exact same frozen aligner, they implicitly conform to a shared representational contract without exchanging gradients.*
+
+**Stage 2: Recomposition & Adaptation**
+Finally, the system discards the aligner slices and assembles the newly trained target blocks into the complete target model $\hat{F} = f_K \circ \dots \circ f_1$. 
+
+![Step 4: Composing the Trained Submodels](/assets/images/mot-step4.png)
+*Figure 1d: The "cold-composed" model is assembled. Optionally, a brief end-to-end adaptation pass reconciles boundary transitions.*
+
+## Advantages and Disadvantages
+
+By altering the engineering parameters of LLM pretraining, MoT introduces a new set of trade-offs:
+
+**Advantages:**
+* **Parallel Critical Path:** Because Stage 1 submodel jobs execute independently without inter-job gradient communication, training time scales with available parallel hardware, shortening the idealized dependency path compared to monolithic runs.
+* **Modular Fault Tolerance:** Submodel runs are decoupled. A hardware crash or instability in one block's training job does not affect the others, simplifying recovery workflows.
+* **Amortized Efficiency:** While pretraining an aligner requires compute upfront, the effective cost falls below a monolithic baseline if the same aligner is reused across multiple independent target-model runs.
+
+**Disadvantages:**
+* **Cold-Composition Mismatch:** Stitching submodels together directly introduces a performance mismatch at layer boundaries, requiring a Stage 2 adaptation pass to recover full baseline quality.
+* **Single-Run Compute Overhead:** If the aligner's training compute is fully charged to a single target run without any reuse, the quality-parity schedule costs more total compute than a monolithic baseline.
+* **Contiguous Granularity Constraints:** The method currently relies on contiguous depth slicing; non-contiguous or expert-level splits introduce permutation alignment challenges not handled by this scaffold setup.
+
+## Experimental Takeaways
+
+The authors evaluated MoT on a 1.3B-parameter language model trained on the C4 dataset, revealing several key mechanistic insights:
+
+* **The Aligner is Essential:** Omitting the aligner scaffold altogether leads to a sharp degradation in model quality upon composition. The frozen aligner is strictly required to enforce boundary compatibility across the independently trained slices.
+* **Adaptation Closes the Gap:** While "cold composition" leaves a performance gap compared to a monolithic run, a brief Stage 2 adaptation pass closes most of the difference, and a longer quality-parity schedule reaches the same reported perplexity as the baseline.
+* **Data Diversity Helps:** Training different submodels on disjoint data streams during Stage 1 actually improves cold-composition quality. Because the shared aligner scaffold maintains structural interface alignment, the recomposed target model benefits from broader aggregate token exposure.
+* **The Granularity Trade-off:** Increasing the number of splits (e.g., from 2 blocks to 4 blocks) reduces the compute required for Stage 1 and increases parallelism, but the increased number of block interfaces results in a higher cold-composition penalty. 
+
+By proving that language model pretraining can be factorized into independently trainable components, MoT opens a concrete design space for reusable training units and decentralized model development.
+
+---
+
+### References
+1. *Sabry, M., Augenstein, S., Rush, K., & Dery, L. (2026). Mixture of Training: Recombining Small-Scale Scaffolded Pretraining Runs into a Larger Language Model. arXiv:2608.13277v1 [cs.CL].*
