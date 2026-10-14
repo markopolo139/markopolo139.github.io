@@ -1,3 +1,15 @@
+<script>
+  MathJax = {
+    tex: {
+      inlineMath: [['$', '$'], ['\\(', '\\)']],
+      displayMath: [['$$', '$$'], ['\\[', '\\]']]
+    }
+  };
+</script>
+<script id="MathJax-script" async
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js">
+</script>
+
 # Building Models like Software: Scaffolded Pretraining with Mixture of Training (MoT)
 
 Large language model (LLM) pretraining has historically been an all-or-nothing, monolithic endeavor. Every layer in a massive Transformer is optimized jointly in a single, tightly coupled run. If a node fails, a loss spike occurs, or an architectural change is desired, engineers are forced to either roll back to a checkpoint or restart the entire system. 
