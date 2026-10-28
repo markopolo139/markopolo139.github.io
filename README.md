@@ -30,7 +30,7 @@ Why can't we simply split the model, train the first half on GPU A, the second h
 
 MoT resolves this mismatch by introducing a small, pretrained model called an **aligner** ($A = a_K \circ \dots \circ a_1$). The aligner is sliced into the exact same number of blocks ($K$) as the target model. 
 
-Crucially, the aligner acts as a universal translator or a standardized "API contract" for the neural network. It must be shape-compatible with the target model—sharing the exact same global width, attention-head dimensions, token embeddings, and output head. This shape compatibility allows layers to be swapped cleanly without requiring messy post-hoc projection layers.
+Crucially, the aligner acts as a universal translator or a standardized "API contract" for the neural network. It must be shape-compatible with the target model—sharing the exact same global width, attention-head dimensions, token embeddings, and output head. This shape compatibility allows layers to be swapped cleanly without requiring messy post-hoc projection layers. While the aligner shares the target model's hidden width ($d_{\text{model}}$), it is much shallower—meaning a single thin aligner block $a_i$ (e.g., 1–2 layers) acts as a stand-in for a much deeper target block $f_i$ (e.g., 6–8 layers).
 
 To train a specific target block (e.g., $f_i$), MoT builds a "scaffold" network around it using the aligner:
 
@@ -42,14 +42,14 @@ During training, only the target block $f_i$ is updated; the surrounding aligner
 MoT structures model construction into three distinct stages, allowing the model to be built piece by piece. 
 
 ![Mixture of Training (MoT) Architecture](/assets/images/mot_approach.png)
-*Figure 1: The complete architecture and workflow of Mixture of Training (MoT)[1].*
+*Figure 1: The complete architecture and workflow of Mixture of Training (MoT). Source: Sabry et al. (2026) [1].*
 
 Based on the architecture detailed in Figure 1, the MoT process unfolds as follows:
 
 *   **Step 1: Using Pretrained Model as Aligner (Stage 0).** A shape-compatible pretrained aligner is selected and partitioned into contiguous layer blocks. Its parameters are strictly frozen.
 *   **Step 2: Configuring the Target Larger Model for Training (Stage 0).** The target architecture's randomly initialized layers are packaged into submodels (e.g., early layers, middle layers, last layers) corresponding to the aligner's partitions.
-*   **Step 3: Scaffolded Training (Stage 1).** The aligner components are temporarily replaced with their corresponding target submodels. Each resulting scaffold is trained independently. During this step, only the target blocks are updated using standard next-token prediction loss, while the surrounding aligner layers remain frozen. Because every block optimizes within the exact same frozen representational context, they implicitly conform to a shared interface contract without exchanging gradients.
-*   **Step 4: Composing the Trained Submodels (Stage 2).** The frozen aligner slices are discarded, and the newly trained target submodels are stitched together to form the final, larger target model. This "cold-composed" model can optionally undergo a brief end-to-end adaptation pass to reconcile any remaining boundary transitions.
+*   **Step 3: Scaffolded Training (Stage 1).** For each partition $i$, the aligner block $a_i$ is swapped out for the deeper, randomly initialized target block $f_i$ to form the scaffold $S_i$. Each scaffold is trained independently on standard next-token prediction loss: activations pass through the frozen prefix ($a_1 \dots a_{i-1}$), get transformed by the active target block ($f_i$), and pass through the frozen suffix ($a_{i+1} \dots a_K$) to compute gradients exclusively for $f_i$.
+*   **Step 4: Composing the Trained Submodels (Stage 2).** Once all scaffolds finish training, the frozen aligner slices are discarded, and the trained target blocks are stitched directly together into the full target model ($\hat{F} = f_K \circ \dots \circ f_1$). This "cold-composed" model then undergoes a brief end-to-end adaptation pass to smooth out any subtle activation mismatches at the block boundaries.
 
 ## Advantages and Disadvantages
 
@@ -63,7 +63,7 @@ By altering the engineering parameters of LLM pretraining, MoT introduces a new 
 **Disadvantages:**
 * **Cold-Composition Mismatch:** Stitching submodels together directly introduces a performance mismatch at layer boundaries, requiring a Stage 2 adaptation pass to recover full baseline quality.
 * **Single-Run Compute Overhead:** If the aligner's training compute is fully charged to a single target run without any reuse, the quality-parity schedule costs more total compute than a monolithic baseline.
-* **Contiguous Granularity Constraints:** The method currently relies on contiguous depth slicing; non-contiguous or expert-level splits introduce permutation alignment challenges not handled by this scaffold setup.
+* **Contiguous Depth Constraints:** The scaffold only enforces alignment at the input and output boundaries of sequential layer blocks. Extending MoT to non-sequential layers or width-wise splits (like training parallel MoE experts separately) fails because internal neurons exhibit permutation symmetry—meaning separately trained width slices will not align their internal feature dimensions without extra weight-matching algorithms.
 
 ## Experimental Takeaways
 
